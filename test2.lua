@@ -69,6 +69,8 @@ local function getKeypress()
                         table.insert(screenBuffer, inputText)
                         inputText = ""
                         inputScroll = 1
+                        -- Auto-scroll to last line
+                        verticalScroll = math.max(1, #screenBuffer - h + 1)
                         redraw = true
                     end
                 elseif param == 203 and inputScroll > 1 then -- Left
