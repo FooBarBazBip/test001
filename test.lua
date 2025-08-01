@@ -9,11 +9,11 @@ function rawread()
     while true do
         local sEvent, param = os.pullEvent("key")
         if sEvent == "key" then
-            if param == 29 then
-                print("Left Ctrl detected")
+            if param == 200 then
+                print("Up detected")
                 break
-            elseif param == 1 then
-                print("Escape detected")
+            elseif param == 208 then
+                print("Down detected")
                 break
             end
         end
