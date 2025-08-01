@@ -32,14 +32,28 @@ local horizontalScroll = 1
 local inputMode = false
 local inputText = ""
 local inputScroll = 1
+local mode = "none" -- Can be "none", "input", or "menu"
+local menuItems = {"save", "exit"}
+local selectedMenuItem = 1
 
 local function displayInput()
     term.setCursorPos(1, 19)  -- Position at bottom line
     term.clearLine()
-    if inputMode then
+    
+    if mode == "input" then
         local visibleInput = string.sub(inputText, inputScroll, inputScroll + w - 1)
         term.write("> " .. visibleInput)
         term.setCursorPos(math.min(#inputText + 3 - inputScroll, w), 19)
+    elseif mode == "menu" then
+        local menuText = ""
+        for i, item in ipairs(menuItems) do
+            if i == selectedMenuItem then
+                menuText = menuText .. "[" .. item .. "] "
+            else
+                menuText = menuText .. item .. " "
+            end
+        end
+        term.write(menuText)
     end
 end
 
@@ -61,9 +75,32 @@ local function getKeypress()
             local redraw = false
             
             if param == 29 then -- Left Ctrl
-                inputMode = not inputMode
+                if mode == "none" then
+                    mode = "input"
+                elseif mode == "input" then
+                    mode = "menu"
+                    selectedMenuItem = 1
+                else
+                    mode = "none"
+                end
                 redraw = true
-            elseif inputMode then
+            elseif mode == "menu" then
+                if param == 203 then -- Left
+                    selectedMenuItem = math.max(1, selectedMenuItem - 1)
+                    redraw = true
+                elseif param == 205 then -- Right
+                    selectedMenuItem = math.min(#menuItems, selectedMenuItem + 1)
+                    redraw = true
+                elseif param == 28 then -- Enter
+                    if menuItems[selectedMenuItem] == "save" then
+                        -- Add save functionality here
+                        -- For example:
+                        -- saveBuffer(screenBuffer)
+                    elseif menuItems[selectedMenuItem] == "exit" then
+                        break
+                    end
+                end
+            elseif mode == "input" then
                 if param == 28 then -- Enter
                     if #inputText > 0 then
                         table.insert(screenBuffer, inputText)
@@ -116,7 +153,7 @@ local function getKeypress()
             if redraw then
                 displayBuffer()
             end
-        elseif sEvent == "char" and inputMode then
+        elseif sEvent == "char" and mode == "input" then
             -- Handle character input
             inputText = inputText .. param
             redraw = true
