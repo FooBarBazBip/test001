@@ -1,0 +1,7 @@
+{
+    "extensionPermissions": {
+        "JackMacWindows.craftos-pc": [
+            "shareServices"
+        ]
+    }
+}
