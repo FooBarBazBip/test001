@@ -12,8 +12,8 @@ function rawread()
             if param == 29 then
                 print("Left Ctrl detected")
                 break
-            elseif param == 209 then
-                print("Page Down detected")
+            elseif param == 1 then
+                print("Escape detected")
                 break
             end
         end
