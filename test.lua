@@ -24,3 +24,6 @@ hello()
 print(os.date())
 print("Printed date.")
 rawread()
+print("End of test.lua")
+-- End of test.lua
+-- This is a simple test script for ComputerCraft in VS Code.
