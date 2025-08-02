@@ -1,5 +1,8 @@
+-- local term = require("term")
 local w, h = 51, 18  -- Changed from 19 to 18 to accommodate input bar
-local screenBuffer = {"This is a very long line that needs horizontal scrolling to be fully visible", 
+
+-- Variable declarations
+local screenBuffer = {"This is a very long line that needs horizontal scrolling to be fully visible",
                      "Another long line that extends beyond the screen width limit of 51 characters",
                      "This is line 3 with more content that we want to scroll horizontally to see",
                      "=== Key Features ===",
@@ -27,19 +30,45 @@ for i = 1, 30 do
     table.insert(screenBuffer, string.format("Test line %d with extra content to demonstrate scrolling %d", i, i * 100))
 end
 
+-- Control variables
 local verticalScroll = 1
 local horizontalScroll = 1
 local inputMode = false
 local inputText = ""
 local inputScroll = 1
-local mode = "none" -- Can be "none", "input", or "menu"
+local mode = "none"
 local menuItems = {"save", "exit"}
 local selectedMenuItem = 1
+local modalActive = false
 
+local modalState = {
+    active = false,
+    x = nil,
+    y = nil,
+    w = nil,
+    h = nil
+}
+
+-- Basic utility functions
+local function saveToFile(path, buffer)
+    local file = fs.open(path, "w")
+    if file then
+        for _, line in ipairs(buffer) do
+            file.writeLine(line)
+        end
+        file.close()
+        return true
+    end
+    return false
+end
+
+
+
+-- Display bottom bar
 local function displayInput()
-    term.setCursorPos(1, 19)  -- Position at bottom line
+    term.setCursorPos(1, 19)
     term.clearLine()
-    
+
     if mode == "input" then
         local visibleInput = string.sub(inputText, inputScroll, inputScroll + w - 1)
         term.write("> " .. visibleInput)
@@ -66,14 +95,74 @@ local function displayBuffer()
         print(visibleText)
     end
     displayInput()
+
+-- Modify the showModal function to only draw the modal
+local function showModal()
+    local modalW, modalH = 45, 16
+    local modalX = math.floor((w - modalW) / 2)
+    local modalY = math.floor((h - modalH) / 2)
+
+    -- Draw modal background first
+    for y = modalY, modalY + modalH do
+        term.setCursorPos(modalX, y)
+        term.write(string.rep(" ", modalW))
+    end
+
+    -- Draw border - vertical lines
+    for y = modalY, modalY + modalH do
+        term.setCursorPos(modalX-1, y)
+        term.write("|")
+        term.setCursorPos(modalX+modalW, y)
+        term.write("|")
+    end
+
+    -- Draw border - horizontal lines
+    term.setCursorPos(modalX-1, modalY-1)
+    term.write(string.rep("-", modalW+2))
+    term.setCursorPos(modalX-1, modalY+modalH)
+    term.write(string.rep("-", modalW+2))
+
+    return modalX, modalY, modalW, modalH
 end
 
+-- Modify handleModal to just manage modal state and redraw
+local function handleModal()
+    if modalActive and not modalState.active then
+        -- First time showing modal
+        local mx, my, mw, mh = showModal()
+        modalState.active = true
+        modalState.x = mx
+        modalState.y = my
+        return mx, my
+    elseif not modalActive and modalState.active then
+        -- Modal is closing - just update state
+        modalState.active = false
+        modalState.x = nil
+        modalState.y = nil
+        -- Full redraw will restore background automatically
+        displayBuffer()
+        return nil
+    elseif modalActive and modalState.active then
+        -- Modal is already showing
+        return modalState.x, modalState.y
+    end
+    return nil
+end
+
+    -- Handle modal display and restoration
+    local restoreX, restoreY = handleModal()
+    if not modalActive and restoreX and restoreY then
+        restoreModalBackground(restoreX, restoreY)
+    end
+end
+
+-- Input handling function
 local function getKeypress()
     while true do
         local sEvent, param = os.pullEvent()
         if sEvent == "key" then
             local redraw = false
-            
+
             if param == 29 then -- Left Ctrl
                 if mode == "none" then
                     mode = "input"
@@ -93,9 +182,24 @@ local function getKeypress()
                     redraw = true
                 elseif param == 28 then -- Enter
                     if menuItems[selectedMenuItem] == "save" then
-                        -- Add save functionality here
-                        -- For example:
-                        -- saveBuffer(screenBuffer)
+                        -- Show save dialog
+                        modalActive = true
+                        displayBuffer() -- Force modal display
+
+                        -- Get input directly at modal center
+                        term.setCursorPos(math.floor(w/2) - 7, math.floor(h/2))
+                        term.write("Save as: ")
+                        local filename = read()
+
+                        if filename and #filename > 0 then
+                            local success = saveToFile(filename, screenBuffer)
+                            term.setCursorPos(math.floor(w/2) - 10, math.floor(h/2) + 1)
+                            term.write(success and "File saved!" or "Save failed!")
+                            os.sleep(1)
+                        end
+
+                        modalActive = false
+                        redraw = true
                     elseif menuItems[selectedMenuItem] == "exit" then
                         break
                     end
@@ -145,11 +249,11 @@ local function getKeypress()
                     end
                 end
             end
-            
+
             if param == 1 then -- Escape
                 break
             end
-            
+
             if redraw then
                 displayBuffer()
             end
@@ -162,7 +266,7 @@ local function getKeypress()
     end
 end
 
-term.clear()
+-- Main program
 displayBuffer()
 getKeypress()
 print("End of test2.lua")
