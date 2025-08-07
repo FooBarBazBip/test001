@@ -359,80 +359,97 @@ end
 
 -- Modify showModal to include button handlers
 function UI.Application:showModal(type)
+    -- Smaller, more efficient modal size
+    local modalWidth = 35
+    local modalHeight = 12
+    local modalX = math.floor((self.width - modalWidth) / 2) + 1
+    local modalY = 3  -- Below top bar
+    
     self.modalWindow = Windows.Modal:new({
         title = type == "load" and "Load File" or "Save File",
-        width = 40,
-        height = 15,
+        width = modalWidth,
+        height = modalHeight,
         parent = self,
-        x = math.floor((self.width - 40) / 2),
-        y = math.floor((self.height - 15) / 2),
+        x = modalX,
+        y = modalY,
         visible = true
     })
     
-    -- Add controls
-    self.modalWindow:addControl(Controls.Dropdown:new({
-        x = self.modalWindow.x + 2,
-        y = self.modalWindow.y + 1,
+    -- Path ComboBox (hybrid input/dropdown)
+    local pathCombo = Controls.ComboBox:new({
+        x = modalX + 1,
+        y = modalY + 1,
+        width = modalWidth - 2,
         label = "Path:",
-        value = "/",
-        options = fs.list("/")
-    }))
-    
-    self.modalWindow:addControl(Controls.FileList:new({
-        x = self.modalWindow.x + 2,
-        y = self.modalWindow.y + 3,
-        height = 8,
-        items = fs.list("/")
-    }))
-    
-    local filenameInput = Controls.TextInput:new({
-        x = self.modalWindow.x + 2,
-        y = self.modalWindow.y + 12,
-        label = "File:",
-        width = 30
+        text = "/",
+        currentPath = "/",
+        onPathChange = function(path)
+            -- Update file list when path changes
+            local fileList = self.modalWindow.controls[2]
+            if fileList then
+                fileList:updateFiles(path)
+            end
+        end
     })
-    self.modalWindow:addControl(filenameInput)
     
-    -- Action button (Save/Load)
+    -- File List (compact)
+    local fileList = Controls.FileList:new({
+        x = modalX + 1,
+        y = modalY + 3,
+        width = modalWidth - 2,
+        height = 5,
+        maxVisibleItems = 4
+    })
+    
+    -- Filename TextInput
+    local filenameInput = Controls.TextInput:new({
+        x = modalX + 1,
+        y = modalY + 9,
+        width = modalWidth - 2,
+        label = "File:"
+    })
+    
+    -- Buttons (side by side)
     local actionBtn = Controls.Button:new({
-        x = self.modalWindow.x + 20,
-        y = self.modalWindow.y + 13,
+        x = modalX + 8,
+        y = modalY + 10,
         label = type == "load" and "Load" or "Save",
         onClick = function()
-            local path = fs.combine(self.modalWindow.controls[1].value, filenameInput.text)
+            local path = fs.combine(pathCombo.currentPath, filenameInput.text)
             if type == "save" then
                 if self:saveFile(path, self.mainWindow.buffer) then
-                    self.modalWindow.visible = false
+                    self.modalWindow:close()
                     self.bottomBar:setMode("read")
                 end
-            else -- load
+            else
                 local newBuffer = self:loadFile(path)
                 if newBuffer then
                     self.mainWindow.buffer = newBuffer
-                    self.mainWindow.scrollX = 1
-                    self.mainWindow.scrollY = 1
-                    self.modalWindow.visible = false
+                    self.modalWindow:close()
                     self.bottomBar:setMode("read")
                 end
             end
         end
     })
-    self.modalWindow:addControl(actionBtn)
     
-    -- Cancel button
     local cancelBtn = Controls.Button:new({
-        x = self.modalWindow.x + 30,
-        y = self.modalWindow.y + 13,
+        x = modalX + 20,
+        y = modalY + 10,
         label = "Cancel",
         onClick = function()
-            self.modalWindow.visible = false
+            self.modalWindow:close()
             self.bottomBar:setMode("read")
         end
     })
+    
+    self.modalWindow:addControl(pathCombo)
+    self.modalWindow:addControl(fileList)
+    self.modalWindow:addControl(filenameInput)
+    self.modalWindow:addControl(actionBtn)
     self.modalWindow:addControl(cancelBtn)
     
-    self.bottomBar:setMode("visual")  -- Show help text
-    self:draw()  -- Immediate redraw to show modal
+    self.bottomBar:setMode("visual")
+    self:draw()
     return self.modalWindow
 end
 

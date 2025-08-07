@@ -71,19 +71,71 @@ end
 Controls.FileList = Controls.Base:new({
     items = {},
     selectedIndex = 1,
-    scrollOffset = 0
+    scrollOffset = 0,
+    maxVisibleItems = 8,
+    width = 36
 })
+
+function Controls.FileList:updateFiles(path)
+    self.items = {}
+    if fs.exists(path) and fs.isDir(path) then
+        for _, item in ipairs(fs.list(path)) do
+            local fullPath = fs.combine(path, item)
+            if not fs.isDir(fullPath) then -- Files only
+                table.insert(self.items, item)
+            end
+        end
+    end
+    self.selectedIndex = math.min(self.selectedIndex, #self.items)
+end
 
 function Controls.FileList:draw()
     if not self.visible then return end
-    local visibleItems = math.min(self.height, #self.items)
     
-    for i = 1, visibleItems do
-        local itemIndex = i + self.scrollOffset
-        if itemIndex <= #self.items then
+    -- Draw border around file list
+    local borderX, borderY = self.x - 1, self.y - 1
+    local borderWidth, borderHeight = self.width + 2, self.height + 2
+    
+    -- Top border
+    term.setCursorPos(borderX, borderY)
+    term.write("+" .. string.rep("-", borderWidth - 2) .. "+")
+    
+    -- Side borders and content
+    for i = 1, self.height do
+        term.setCursorPos(borderX, borderY + i)
+        term.write("|")
+        term.setCursorPos(borderX + borderWidth - 1, borderY + i)
+        term.write("|")
+        
+        -- Clear content area
+        term.setCursorPos(self.x, self.y + i - 1)
+        term.write(string.rep(" ", self.width))
+        
+        -- Draw file items
+        local idx = i + self.scrollOffset
+        if self.items[idx] then
             term.setCursorPos(self.x, self.y + i - 1)
-            local item = self.items[itemIndex]
-            term.write(itemIndex == self.selectedIndex and "> " .. item or "  " .. item)
+            local prefix = self.focused and (idx == self.selectedIndex and ">" or " ") or " "
+            local item = string.sub(self.items[idx], 1, self.width - 2)
+            term.write(prefix .. item)
+        end
+    end
+    
+    -- Bottom border
+    term.setCursorPos(borderX, borderY + borderHeight - 1)
+    term.write("+" .. string.rep("-", borderWidth - 2) .. "+")
+    
+    -- Draw scroll indicator if needed
+    if #self.items > self.height then
+        local scrollPercent = self.scrollOffset / math.max(1, #self.items - self.height)
+        local indicatorPos = math.floor(scrollPercent * (self.height - 1)) + 1
+        for i = 1, self.height do
+            term.setCursorPos(self.x + self.width, self.y + i - 1)
+            if i == indicatorPos then
+                term.write("#")
+            else
+                term.write("|")
+            end
         end
     end
 end
@@ -92,18 +144,31 @@ function Controls.FileList:handleInput(event, param)
     if not self.enabled or not self.focused then return false end
     
     if event == "key" then
-        if param == 200 and self.selectedIndex > 1 then  -- Up
+        if param == 200 and self.selectedIndex > 1 then -- Up
             self.selectedIndex = self.selectedIndex - 1
-            return true
-        elseif param == 208 and self.selectedIndex < #self.items then  -- Down
-            self.selectedIndex = self.selectedIndex + 1
-            if self.selectedIndex > self.scrollOffset + self.height then
-                self.scrollOffset = self.scrollOffset + 1
+            -- Adjust scroll offset if needed
+            if self.selectedIndex <= self.scrollOffset then
+                self.scrollOffset = math.max(0, self.selectedIndex - 1)
             end
             return true
-        elseif param == 28 then  -- Enter
-            if self.onSelect then
-                self.onSelect(self.items[self.selectedIndex])
+        elseif param == 208 and self.selectedIndex < #self.items then -- Down
+            self.selectedIndex = self.selectedIndex + 1
+            -- Adjust scroll offset if needed
+            if self.selectedIndex > self.scrollOffset + self.height then
+                self.scrollOffset = self.selectedIndex - self.height
+            end
+            return true
+        elseif param == 28 then -- Enter
+            if self.items[self.selectedIndex] then
+                -- Update filename input with selected file
+                if self.parent and self.parent.controls[3] then
+                    self.parent.controls[3].text = self.items[self.selectedIndex]
+                    self.parent.controls[3].cursorPos = #self.items[self.selectedIndex] + 1
+                    -- Move focus to filename input
+                    self.focused = false
+                    self.parent.selectedControl = 3
+                    self.parent.controls[3].focused = true
+                end
             end
             return true
         end
@@ -227,6 +292,191 @@ function Controls.Button:handleInput(event, param)
         return true
     end
     return false
+end
+
+-- ComboBox Control
+Controls.ComboBox = Controls.TextInput:new({
+    options = {},
+    isOpen = false,
+    selectedIndex = 1,
+    currentPath = "/",
+    onPathChange = nil
+})
+
+function Controls.ComboBox:draw()
+    if not self.visible then return end
+    
+    -- Clear the line first to prevent artifacts
+    term.setCursorPos(self.x, self.y)
+    term.write(string.rep(" ", self.width))
+    
+    -- Draw main input field with fixed positioning
+    term.setCursorPos(self.x, self.y)
+    local displayText = self.label .. self.text
+    local maxTextWidth = self.width - 4 -- Reserve space for indicator
+    if #displayText > maxTextWidth then
+        displayText = string.sub(displayText, 1, maxTextWidth)
+    end
+    
+    local indicator = self.focused and (self.isOpen and "[v]" or "[>]") or "   "
+    term.write(displayText .. indicator)
+    
+    -- Show cursor if focused and not in dropdown mode
+    if self.focused and not self.isOpen then
+        local cursorPos = self.x + #self.label + (self.cursorPos - self.scrollOffset - 1)
+        if cursorPos >= self.x + #self.label and cursorPos < self.x + maxTextWidth then
+            term.setCursorPos(cursorPos, self.y)
+            term.setCursorBlink(true)
+        end
+    else
+        term.setCursorBlink(false)
+    end
+    
+    -- Draw compact dropdown below with boundaries
+    if self.isOpen and #self.options > 0 then
+        local maxShow = math.min(3, #self.options)
+        for i = 1, maxShow do
+            local idx = i + self.scrollOffset
+            if self.options[idx] then
+                term.setCursorPos(self.x, self.y + i)
+                term.write(string.rep(" ", self.width)) -- Clear line
+                term.setCursorPos(self.x, self.y + i)
+                local prefix = (idx == self.selectedIndex) and ">" or " "
+                local item = string.sub(fs.getName(self.options[idx]), 1, self.width - 3)
+                term.write(prefix .. item)
+            end
+        end
+        -- Draw dropdown boundary
+        term.setCursorPos(self.x + self.width - 1, self.y + 1)
+        term.write("|")
+        term.setCursorPos(self.x + self.width - 1, self.y + 2)
+        term.write("|")
+        term.setCursorPos(self.x + self.width - 1, self.y + 3)
+        term.write("|")
+    end
+end
+
+function Controls.ComboBox:handleInput(event, param)
+    if not self.visible or not self.focused then return false end
+    
+    if event == "char" and not self.isOpen then
+        -- Full text input functionality
+        self.text = string.sub(self.text, 1, self.cursorPos - 1) 
+            .. param 
+            .. string.sub(self.text, self.cursorPos)
+        self.cursorPos = self.cursorPos + 1
+        -- Adjust scroll if needed
+        local maxTextWidth = self.width - 4
+        if self.cursorPos - self.scrollOffset > maxTextWidth - #self.label then
+            self.scrollOffset = self.cursorPos - (maxTextWidth - #self.label)
+        end
+        return true
+    elseif event == "key" then
+        if param == 57 then -- Space
+            if not self.isOpen then
+                self:toggleDropdown()
+            else
+                -- Add space character when dropdown is closed
+                return self:handleInput("char", " ")
+            end
+            return true
+        elseif param == 28 then -- Enter
+            if self.isOpen and self.options[self.selectedIndex] then
+                self.text = self.options[self.selectedIndex]
+                self.isOpen = false
+                self:updatePath()
+                -- Move focus to next control (file list)
+                if self.parent and self.parent.controls[2] then
+                    self.focused = false
+                    self.parent.selectedControl = 2
+                    self.parent.controls[2].focused = true
+                end
+            else
+                self:updatePath()
+            end
+            return true
+        elseif param == 14 and not self.isOpen then -- Backspace
+            if self.cursorPos > 1 then
+                self.text = string.sub(self.text, 1, self.cursorPos - 2) 
+                    .. string.sub(self.text, self.cursorPos)
+                self.cursorPos = math.max(1, self.cursorPos - 1)
+                if self.scrollOffset > 0 and self.cursorPos <= self.scrollOffset then
+                    self.scrollOffset = math.max(0, self.scrollOffset - 1)
+                end
+            end
+            return true
+        elseif param == 203 and not self.isOpen then -- Left
+            if self.cursorPos > 1 then
+                self.cursorPos = self.cursorPos - 1
+                if self.scrollOffset > 0 and self.cursorPos <= self.scrollOffset then
+                    self.scrollOffset = self.scrollOffset - 1
+                end
+            end
+            return true
+        elseif param == 205 and not self.isOpen then -- Right
+            if self.cursorPos <= #self.text then
+                self.cursorPos = self.cursorPos + 1
+                local maxTextWidth = self.width - 4
+                if self.cursorPos - self.scrollOffset > maxTextWidth - #self.label then
+                    self.scrollOffset = self.cursorPos - (maxTextWidth - #self.label)
+                end
+            end
+            return true
+        elseif param == 199 and not self.isOpen then -- Home
+            self.cursorPos = 1
+            self.scrollOffset = 0
+            return true
+        elseif param == 207 and not self.isOpen then -- End
+            self.cursorPos = #self.text + 1
+            local maxTextWidth = self.width - 4
+            if #self.text > maxTextWidth - #self.label then
+                self.scrollOffset = #self.text - (maxTextWidth - #self.label)
+            end
+            return true
+        elseif self.isOpen then
+            if param == 200 and self.selectedIndex > 1 then -- Up
+                self.selectedIndex = self.selectedIndex - 1
+                if self.selectedIndex <= self.scrollOffset then
+                    self.scrollOffset = math.max(0, self.scrollOffset - 1)
+                end
+                return true
+            elseif param == 208 and self.selectedIndex < #self.options then -- Down
+                self.selectedIndex = self.selectedIndex + 1
+                if self.selectedIndex > self.scrollOffset + 3 then
+                    self.scrollOffset = self.selectedIndex - 3
+                end
+                return true
+            end
+        end
+    end
+    return true
+end
+
+function Controls.ComboBox:toggleDropdown()
+    if not self.isOpen then
+        -- Populate with directories only
+        self.options = {}
+        local path = self.text ~= "" and self.text or "/"
+        if fs.exists(path) and fs.isDir(path) then
+            for _, item in ipairs(fs.list(path)) do
+                local fullPath = fs.combine(path, item)
+                if fs.isDir(fullPath) then
+                    table.insert(self.options, fullPath)
+                end
+            end
+        end
+        self.selectedIndex = 1
+    end
+    self.isOpen = not self.isOpen
+end
+
+function Controls.ComboBox:updatePath()
+    if fs.exists(self.text) and fs.isDir(self.text) then
+        self.currentPath = self.text
+        if self.onPathChange then
+            self.onPathChange(self.currentPath)
+        end
+    end
 end
 
 return Controls

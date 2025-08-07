@@ -197,6 +197,7 @@ Windows.Modal = Windows.Base:new({
 function Windows.Modal:new(o)
     o = Windows.Base.new(self, o)
     o.selectedControl = 1
+    o.controls = {}
     return o
 end
 
@@ -232,9 +233,20 @@ function Windows.Modal:handleInput(event, param)
     if event == "key" then
         if param == 15 then -- Tab
             if #self.controls > 0 then
-                self.controls[self.selectedControl].focused = false
+                -- Clear focus from current control
+                if self.controls[self.selectedControl] then
+                    self.controls[self.selectedControl].focused = false
+                    -- Close any open dropdowns
+                    if self.controls[self.selectedControl].isOpen then
+                        self.controls[self.selectedControl].isOpen = false
+                    end
+                end
+                -- Move to next control
                 self.selectedControl = (self.selectedControl % #self.controls) + 1
-                self.controls[self.selectedControl].focused = true
+                -- Set focus on new control
+                if self.controls[self.selectedControl] then
+                    self.controls[self.selectedControl].focused = true
+                end
                 return true
             end
         end
@@ -247,6 +259,19 @@ function Windows.Modal:handleInput(event, param)
         return self.controls[self.selectedControl]:handleInput(event, param)
     end
     return false
+end
+
+function Windows.Modal:close()
+    -- Clear all control focus
+    for _, control in ipairs(self.controls) do
+        control.focused = false
+    end
+    self.visible = false
+    self.controls = {}
+    term.setCursorBlink(false)
+    if self.parent then
+        self.parent.modalWindow = nil
+    end
 end
 
 return Windows
